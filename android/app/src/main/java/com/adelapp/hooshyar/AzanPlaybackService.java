@@ -554,7 +554,7 @@ public class AzanPlaybackService extends Service {
             );
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, channelId)
-                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setSmallIcon(R.drawable.ic_stat_notification)
                     .setContentTitle("🕌 هنگام " + prayerName + " به افق " + cityName)
                     .setContentText("وقت " + prayerName + " فرا رسیده است.")
                     .setContentIntent(pi)
@@ -595,7 +595,7 @@ public class AzanPlaybackService extends Service {
         );
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
+                .setSmallIcon(R.drawable.ic_stat_notification)
                 .setContentTitle(title)
                 .setContentText(content)
                 .setSubText("اذان‌گوی هوشیار")

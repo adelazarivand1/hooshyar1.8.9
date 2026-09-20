@@ -234,7 +234,7 @@ class AzanScheduler {
     const initialTodayInfo = getTodayInfo();
     this.scheduleNativeAlarms(initialSettings, initialTodayInfo);
 
-    const check = () => {
+    const check = async () => {
       try {
         const settings = getSettings();
         const todayInfo = getTodayInfo();
@@ -266,8 +266,10 @@ class AzanScheduler {
           const cityJalali = gregorianToJalali(cityGregorian.gy, cityGregorian.gm, cityGregorian.gd);
           const cityTodayInfo = getFullDateInfo(cityJalali.jy, cityJalali.jm, cityJalali.jd, settings.hijriAdjustment || 0);
           const next = getNextPrayerInfo(prayers, now, city.timezone);
-          showDailyDateNotification(cityTodayInfo, next);
-          this.lastDateNotificationDay = currentDateKey;
+          const scheduled = await showDailyDateNotification(cityTodayInfo, next);
+          if (scheduled) {
+            this.lastDateNotificationDay = currentDateKey;
+          }
         }
 
         // 3. Check Prayer Times for Foreground Playback

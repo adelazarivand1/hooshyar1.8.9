@@ -16,6 +16,7 @@ import { THEME_PRESETS } from './utils/themePresets';
 import { makeDateKey, normalizeDateKey } from './utils/persianNumber';
 import { azanScheduler } from './utils/azanScheduler';
 import { initNotificationService, isCapacitorNative, syncAllUserReminders, requestNotificationPermission } from './utils/notificationService';
+import { checkAzanLaunchNotification, addAzanNotificationOpenedListener } from './utils/nativeAzan';
 import { useTodayDate } from './hooks/useTodayDate';
 import {
   getStoredSettings,
@@ -176,10 +177,18 @@ export function App() {
     saveStoredDebts(debts);
   }, [debts]);
 
-  // Reschedule Azan notifications whenever settings or today changes
+  // Reschedule Azan notifications whenever relevant Azan settings or today changes
   useEffect(() => {
     azanScheduler.scheduleNativeAlarms(settings, todayInfo);
-  }, [settings, todayInfo]);
+  }, [
+    settings.autoAzanEnabled,
+    settings.selectedCityId,
+    settings.azanReciter,
+    settings.azanAlarmFajr,
+    settings.azanAlarmDhuhr,
+    settings.azanAlarmMaghrib,
+    todayInfo
+  ]);
 
   // Init Azan Scheduler & Native Notifications Channels
   useEffect(() => {
@@ -197,7 +206,22 @@ export function App() {
     };
     setupNotifications();
 
-    // Listen for custom event when user taps Azan notification
+    // Check if app was opened from native Azan alarm notification on cold start
+    checkAzanLaunchNotification().then(res => {
+      if (res.wasLaunchedFromAzan) {
+        setIsAzanOpen(true);
+      }
+    }).catch(() => {});
+
+    // Listen for azan notification tap when app is in background
+    let nativeAzanNotifListener: { remove: () => void } | null = null;
+    addAzanNotificationOpenedListener(() => {
+      setIsAzanOpen(true);
+    }).then(listener => {
+      nativeAzanNotifListener = listener;
+    }).catch(() => {});
+
+    // Listen for custom event when user taps Azan notification in web/foreground
     const handleOpenAzan = () => {
       setIsAzanOpen(true);
     };
@@ -215,6 +239,11 @@ export function App() {
     );
 
     return () => {
+      if (nativeAzanNotifListener) {
+        try {
+          nativeAzanNotifListener.remove();
+        } catch {}
+      }
       window.removeEventListener('open-azan-modal', handleOpenAzan);
       window.removeEventListener('exact-alarm-permission-granted', handleExactAlarmGranted);
       azanScheduler.stop();

@@ -21,6 +21,8 @@ import java.util.List;
 public class NativeAzanPlugin extends Plugin {
     private static final String TAG = "NativeAzanPlugin";
     private static volatile NativeAzanPlugin sInstance;
+    private static volatile boolean sLaunchedFromAzan = false;
+    private static volatile String sInitialPrayerName = "";
 
     @Override
     public void load() {
@@ -34,6 +36,36 @@ public class NativeAzanPlugin extends Plugin {
             sInstance = null;
         }
         super.handleOnDestroy();
+    }
+
+    public static void setLaunchFromAzan(boolean val, String prayerName) {
+        sLaunchedFromAzan = val;
+        sInitialPrayerName = prayerName != null ? prayerName : "";
+        if (val && sInstance != null) {
+            notifyAzanNotificationOpened(sInitialPrayerName);
+        }
+    }
+
+    public static void notifyAzanNotificationOpened(String prayerName) {
+        try {
+            if (sInstance != null) {
+                JSObject ret = new JSObject();
+                ret.put("prayerName", prayerName != null ? prayerName : "");
+                sInstance.notifyListeners("azanNotificationOpened", ret);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to notify azanNotificationOpened listener", e);
+        }
+    }
+
+    @PluginMethod
+    public void checkLaunchNotification(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("wasLaunchedFromAzan", sLaunchedFromAzan);
+        ret.put("prayerName", sInitialPrayerName);
+        sLaunchedFromAzan = false;
+        sInitialPrayerName = "";
+        call.resolve(ret);
     }
 
     public static void notifyPlaybackState(boolean isPlaying, String prayerName, String reciterId) {

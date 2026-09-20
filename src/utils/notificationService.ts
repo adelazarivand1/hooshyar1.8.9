@@ -3,7 +3,7 @@ import { Capacitor } from '@capacitor/core';
 import { FullDateInfo, UserReminder } from '../types/calendar';
 import { NextPrayerInfo } from './prayerTimes';
 import { toPersianDigits, toEnglishDigits, normalizeDateKey, PERSIAN_MONTH_NAMES, GREGORIAN_MONTH_NAMES, HIJRI_MONTH_NAMES } from './persianNumber';
-import { jalaliToGregorian, isValidJalali } from './jalali';
+import { jalaliToGregorian, isValidJalali, getJalaliMonthLength, gregorianToJalali } from './jalali';
 import { isNativeAzanAvailable } from './nativeAzan';
 
 export interface NotificationStatus {
@@ -179,7 +179,7 @@ export async function initNotificationService() {
   }
 }
 
-export async function showDailyDateNotification(todayInfo: FullDateInfo, nextPrayer?: NextPrayerInfo | null) {
+export async function showDailyDateNotification(todayInfo: FullDateInfo, nextPrayer?: NextPrayerInfo | null): Promise<boolean> {
   const jalaliStr = `${todayInfo.dayOfWeekName} ${toPersianDigits(todayInfo.jalali.jd)} ${PERSIAN_MONTH_NAMES[todayInfo.jalali.jm - 1]} ${toPersianDigits(todayInfo.jalali.jy)}`;
   const gregorianStr = `${todayInfo.gregorian.gd} ${GREGORIAN_MONTH_NAMES[todayInfo.gregorian.gm - 1]} ${todayInfo.gregorian.gy}`;
   const hijriStr = `${toPersianDigits(todayInfo.hijri.hd)} ${HIJRI_MONTH_NAMES[todayInfo.hijri.hm - 1]} ${toPersianDigits(todayInfo.hijri.hy)}`;
@@ -195,7 +195,7 @@ export async function showDailyDateNotification(todayInfo: FullDateInfo, nextPra
   if (isCapacitorNative()) {
     try {
       const hasPerm = await hasNotificationPermission();
-      if (!hasPerm) return;
+      if (!hasPerm) return false;
 
       await LocalNotifications.schedule({
         notifications: [
@@ -205,18 +205,19 @@ export async function showDailyDateNotification(todayInfo: FullDateInfo, nextPra
             body,
             schedule: { at: new Date(Date.now() + 100) },
             channelId: 'daily_calendar_channel',
-            smallIcon: 'ic_launcher'
+            smallIcon: 'ic_stat_notification'
           }
         ]
       });
+      return true;
     } catch (e) {
       console.warn('Native daily notification error:', e);
+      return false;
     }
-    return;
   }
 
-  if (typeof window === 'undefined' || !('Notification' in window)) return;
-  if (Notification.permission !== 'granted') return;
+  if (typeof window === 'undefined' || !('Notification' in window)) return false;
+  if (Notification.permission !== 'granted') return false;
 
   try {
     const options = {
@@ -228,8 +229,10 @@ export async function showDailyDateNotification(todayInfo: FullDateInfo, nextPra
       silent: true
     };
     new Notification(title, options as NotificationOptions);
+    return true;
   } catch (err) {
     console.warn('Could not post daily notification:', err);
+    return false;
   }
 }
 
@@ -255,7 +258,7 @@ export async function showAzanAlertNotification(prayerName: string, cityName: st
             body,
             schedule: { at: new Date(Date.now() + 100) },
             channelId: AZAN_ACTIVE_CHANNEL_ID,
-            smallIcon: 'ic_launcher'
+            smallIcon: 'ic_stat_notification'
           }
         ]
       });
@@ -341,6 +344,118 @@ export function isValidReminderTime(time?: string | null): boolean {
   return parseReminderTime(time) !== null;
 }
 
+export interface NextReminderSchedule {
+  nextDate: Date;
+  every?: 'week';
+}
+
+/**
+ * Accurately calculates the next occurrence Date for a reminder based on its recurrence rule:
+ * - 'none' / undefined: One-time reminder. Returns original date if in future, else null.
+ * - 'weekly': Recurs every 7 days from initial date. Returns closest upcoming occurrence > now.
+ * - 'monthly': Recurs on the same day of each Jalali month. Handles month lengths (clamping 31 to 30/29)
+ *   and advances to next Jalali month if this month's date is past.
+ * - 'yearly': Recurs on the same month & day of each Jalali year. Handles leap years (Esfand 30 clamped to 29)
+ *   and advances to next Jalali year if this year's date is past.
+ */
+export function calculateNextReminderDate(
+  rem: UserReminder,
+  nowDate: Date = new Date()
+): NextReminderSchedule | null {
+  const normKey = normalizeDateKey(rem.dateKey || '');
+  const dateParts = normKey.split('-').map(Number);
+  if (dateParts.length !== 3 || isNaN(dateParts[0]) || isNaN(dateParts[1]) || isNaN(dateParts[2])) {
+    return null;
+  }
+
+  const jy = dateParts[0];
+  const jm = dateParts[1];
+  const jd = dateParts[2];
+  if (!isValidJalali(jy, jm, jd)) return null;
+
+  const parsedTime = parseReminderTime(rem.time);
+  if (!parsedTime) return null;
+  const { hour, minute } = parsedTime;
+
+  const g = jalaliToGregorian(jy, jm, jd);
+  const initialDate = new Date(g.gy, g.gm - 1, g.gd, hour, minute, 0, 0);
+  const now = nowDate.getTime();
+
+  const isYearly = rem.repeatYearly === true || rem.repeat === 'yearly';
+  const repeatMode = isYearly ? 'yearly' : (rem.repeat || 'none');
+
+  if (repeatMode === 'none') {
+    if (initialDate.getTime() > now) {
+      return { nextDate: initialDate };
+    }
+    return null;
+  }
+
+  if (repeatMode === 'weekly') {
+    if (initialDate.getTime() > now) {
+      return { nextDate: initialDate, every: 'week' };
+    }
+    const diffMs = now - initialDate.getTime();
+    const weeksToAdd = Math.floor(diffMs / (7 * 86400000)) + 1;
+    const nextDate = new Date(initialDate.getTime() + weeksToAdd * 7 * 86400000);
+    return { nextDate, every: 'week' };
+  }
+
+  // Current Jalali date at nowDate
+  const currentJalali = gregorianToJalali(
+    nowDate.getFullYear(),
+    nowDate.getMonth() + 1,
+    nowDate.getDate()
+  );
+
+  if (repeatMode === 'yearly') {
+    // Check occurrence in current Jalali year
+    const maxDaysThisYear = getJalaliMonthLength(currentJalali.jy, jm);
+    const clampedDayThisYear = Math.min(jd, maxDaysThisYear);
+    const gThisYear = jalaliToGregorian(currentJalali.jy, jm, clampedDayThisYear);
+    const candThisYear = new Date(gThisYear.gy, gThisYear.gm - 1, gThisYear.gd, hour, minute, 0, 0);
+
+    if (candThisYear.getTime() > now) {
+      return { nextDate: candThisYear };
+    }
+
+    // Advance to next Jalali year
+    const nextJy = currentJalali.jy + 1;
+    const maxDaysNextYear = getJalaliMonthLength(nextJy, jm);
+    const clampedDayNextYear = Math.min(jd, maxDaysNextYear);
+    const gNextYear = jalaliToGregorian(nextJy, jm, clampedDayNextYear);
+    const candNextYear = new Date(gNextYear.gy, gNextYear.gm - 1, gNextYear.gd, hour, minute, 0, 0);
+    return { nextDate: candNextYear };
+  }
+
+  if (repeatMode === 'monthly') {
+    // Check occurrence in current Jalali month
+    const maxDaysThisMonth = getJalaliMonthLength(currentJalali.jy, currentJalali.jm);
+    const clampedDayThisMonth = Math.min(jd, maxDaysThisMonth);
+    const gThisMonth = jalaliToGregorian(currentJalali.jy, currentJalali.jm, clampedDayThisMonth);
+    const candThisMonth = new Date(gThisMonth.gy, gThisMonth.gm - 1, gThisMonth.gd, hour, minute, 0, 0);
+
+    if (candThisMonth.getTime() > now) {
+      return { nextDate: candThisMonth };
+    }
+
+    // Advance to next Jalali month
+    let nextJy = currentJalali.jy;
+    let nextJm = currentJalali.jm + 1;
+    if (nextJm > 12) {
+      nextJm = 1;
+      nextJy += 1;
+    }
+    const maxDaysNextMonth = getJalaliMonthLength(nextJy, nextJm);
+    const clampedDayNextMonth = Math.min(jd, maxDaysNextMonth);
+    const gNextMonth = jalaliToGregorian(nextJy, nextJm, clampedDayNextMonth);
+    const candNextMonth = new Date(gNextMonth.gy, gNextMonth.gm - 1, gNextMonth.gd, hour, minute, 0, 0);
+    return { nextDate: candNextMonth };
+  }
+
+  return null;
+}
+
 export async function syncAllUserReminders(reminders: UserReminder[]): Promise<void> {
   if (!isCapacitorNative()) return;
 
@@ -361,47 +476,44 @@ export async function syncAllUserReminders(reminders: UserReminder[]): Promise<v
 
     const notificationsToSchedule: LocalNotificationSchema[] = [];
     const usedIds = new Set<number>();
-    const now = Date.now();
+    const nowObj = new Date();
 
     for (const rem of reminders) {
       const isEnabled = rem.isEnabled ?? rem.enabled ?? true;
       if (!isEnabled) continue;
 
-      const normKey = normalizeDateKey(rem.dateKey || '');
-      const dateParts = normKey.split('-').map(Number);
-      if (dateParts.length !== 3 || isNaN(dateParts[0]) || isNaN(dateParts[1]) || isNaN(dateParts[2])) continue;
+      const schedulePlan = calculateNextReminderDate(rem, nowObj);
+      if (!schedulePlan) continue;
 
-      const jy = dateParts[0];
-      const jm = dateParts[1];
-      const jd = dateParts[2];
-      if (!isValidJalali(jy, jm, jd)) continue;
-      const g = jalaliToGregorian(jy, jm, jd);
-
-      const parsedTime = parseReminderTime(rem.time);
-      if (!parsedTime) continue;
+      const { nextDate, every } = schedulePlan;
+      const parsedTime = parseReminderTime(rem.time) || { hour: 9, minute: 0 };
       const { hour, minute } = parsedTime;
 
-      const scheduleDate = new Date(g.gy, g.gm - 1, g.gd, hour, minute, 0, 0);
+      const notifId = getDeterministicReminderNotificationId(rem.id, usedIds);
+      const categoryLabel = rem.type === 'birthday' ? '🎂 تولد و سالگرد' :
+                            rem.type === 'bill' ? '💳 سررسید پرداخت' :
+                            rem.type === 'event' ? '🗓️ رویداد' : '🔔 یادآوری';
 
-      if (scheduleDate.getTime() > now) {
-        const notifId = getDeterministicReminderNotificationId(rem.id, usedIds);
-        const categoryLabel = rem.type === 'birthday' ? '🎂 تولد و سالگرد' :
-                              rem.type === 'bill' ? '💳 سررسید پرداخت' :
-                              rem.type === 'event' ? '🗓️ رویداد' : '🔔 یادآوری';
-
-        notificationsToSchedule.push({
-          id: notifId,
-          title: `${categoryLabel}: ${rem.title}`,
-          body: `یادآوری موعد: ساعت ${toPersianDigits(`${hour < 10 ? '0' + hour : hour}:${minute < 10 ? '0' + minute : minute}`)}`,
-          schedule: { at: scheduleDate, allowWhileIdle: true },
-          channelId: 'reminders_channel',
-          smallIcon: 'ic_launcher',
-          extra: {
-            reminderId: rem.id,
-            dateKey: normKey
-          }
-        });
+      const scheduleConfig: LocalNotificationSchema['schedule'] = {
+        at: nextDate,
+        allowWhileIdle: true
+      };
+      if (every) {
+        scheduleConfig.every = every;
       }
+
+      notificationsToSchedule.push({
+        id: notifId,
+        title: `${categoryLabel}: ${rem.title}`,
+        body: `یادآوری موعد: ساعت ${toPersianDigits(`${hour < 10 ? '0' + hour : hour}:${minute < 10 ? '0' + minute : minute}`)}`,
+        schedule: scheduleConfig,
+        channelId: 'reminders_channel',
+        smallIcon: 'ic_stat_notification',
+        extra: {
+          reminderId: rem.id,
+          dateKey: rem.dateKey
+        }
+      });
     }
 
     if (notificationsToSchedule.length > 0) {

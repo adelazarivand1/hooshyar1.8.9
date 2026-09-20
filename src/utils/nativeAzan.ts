@@ -41,10 +41,11 @@ export interface NativeAzanPluginInterface {
 
   canScheduleExactAlarms?(): Promise<{ canExact: boolean }>;
   openExactAlarmSettings?(): Promise<{ success: boolean }>;
+  checkLaunchNotification?(): Promise<{ wasLaunchedFromAzan: boolean; prayerName?: string }>;
 
   addListener?(
-    eventName: 'playbackStateChanged',
-    listenerFunc: (state: NativeAzanPlaybackState) => void
+    eventName: 'playbackStateChanged' | 'azanNotificationOpened',
+    listenerFunc: (data: any) => void
   ): Promise<PluginListenerHandle>;
 }
 
@@ -210,5 +211,35 @@ export const openExactAlarmSettings = async (): Promise<boolean> => {
     return false;
   } catch {
     return false;
+  }
+};
+
+/**
+ * Checks if the app was launched by the user tapping a native Azan notification.
+ */
+export const checkAzanLaunchNotification = async (): Promise<{ wasLaunchedFromAzan: boolean; prayerName?: string }> => {
+  if (!isNativeAzanAvailable() || !NativeAzan.checkLaunchNotification) {
+    return { wasLaunchedFromAzan: false };
+  }
+  try {
+    return await NativeAzan.checkLaunchNotification();
+  } catch {
+    return { wasLaunchedFromAzan: false };
+  }
+};
+
+/**
+ * Subscribes to notification opened events while the app is in the background or active.
+ */
+export const addAzanNotificationOpenedListener = async (
+  listener: (data: { prayerName?: string }) => void
+): Promise<PluginListenerHandle | null> => {
+  if (!isNativeAzanAvailable() || !NativeAzan.addListener) {
+    return null;
+  }
+  try {
+    return await NativeAzan.addListener('azanNotificationOpened', listener);
+  } catch {
+    return null;
   }
 };

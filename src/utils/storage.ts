@@ -51,103 +51,148 @@ const LEGACY_KEYS = {
   SHIA_BOOKMARKS: ['shia_bookmarks']
 };
 
+// In-memory fallback for private browsing, quota exceeded, or disabled storage environments
+const inMemoryStore = new Map<string, string>();
+
+export function safeGetItem(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const val = localStorage.getItem(key);
+    if (val !== null) return val;
+  } catch {
+    // LocalStorage inaccessible (private mode / restricted sandbox)
+  }
+  return inMemoryStore.get(key) ?? null;
+}
+
+export function safeSetItem(key: string, value: string): boolean {
+  if (typeof window === 'undefined') return false;
+  inMemoryStore.set(key, value);
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    console.warn(`[Storage] Failed to write to localStorage for key ${key}:`, err);
+    return false;
+  }
+}
+
+export function safeRemoveItem(key: string): void {
+  if (typeof window === 'undefined') return;
+  inMemoryStore.delete(key);
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore
+  }
+}
+
+function sanitizeId(rawId: unknown, fallbackPrefix: string, index: number, seenSet: Set<string>): string {
+  let id = typeof rawId === 'string' && rawId.trim() ? rawId.trim() : `${fallbackPrefix}_${Date.now()}_${index}`;
+  if (seenSet.has(id)) {
+    id = `${id}_${index}_${Math.random().toString(36).slice(2, 7)}`;
+  }
+  seenSet.add(id);
+  return id;
+}
+
 /**
  * Automatically migrates existing user data from older key variations to unified v3 keys.
  */
 export function runStorageMigrationIfNeeded(): void {
   if (typeof window === 'undefined') return;
   try {
-    const isMigrated = localStorage.getItem(STORAGE_KEYS.MIGRATION_VERSION);
+    const isMigrated = safeGetItem(STORAGE_KEYS.MIGRATION_VERSION);
     if (isMigrated === 'true') return;
 
     // Migrate Settings
-    if (!localStorage.getItem(STORAGE_KEYS.SETTINGS)) {
+    if (!safeGetItem(STORAGE_KEYS.SETTINGS)) {
       for (const oldKey of LEGACY_KEYS.SETTINGS) {
-        const val = localStorage.getItem(oldKey);
+        const val = safeGetItem(oldKey);
         if (val) {
-          localStorage.setItem(STORAGE_KEYS.SETTINGS, val);
+          safeSetItem(STORAGE_KEYS.SETTINGS, val);
           break;
         }
       }
     }
 
     // Migrate Notes
-    if (!localStorage.getItem(STORAGE_KEYS.NOTES)) {
+    if (!safeGetItem(STORAGE_KEYS.NOTES)) {
       for (const oldKey of LEGACY_KEYS.NOTES) {
-        const val = localStorage.getItem(oldKey);
+        const val = safeGetItem(oldKey);
         if (val) {
-          localStorage.setItem(STORAGE_KEYS.NOTES, val);
+          safeSetItem(STORAGE_KEYS.NOTES, val);
           break;
         }
       }
     }
 
     // Migrate Tasks
-    if (!localStorage.getItem(STORAGE_KEYS.TASKS)) {
+    if (!safeGetItem(STORAGE_KEYS.TASKS)) {
       for (const oldKey of LEGACY_KEYS.TASKS) {
-        const val = localStorage.getItem(oldKey);
+        const val = safeGetItem(oldKey);
         if (val) {
-          localStorage.setItem(STORAGE_KEYS.TASKS, val);
+          safeSetItem(STORAGE_KEYS.TASKS, val);
           break;
         }
       }
     }
 
     // Migrate Reminders
-    if (!localStorage.getItem(STORAGE_KEYS.REMINDERS)) {
+    if (!safeGetItem(STORAGE_KEYS.REMINDERS)) {
       for (const oldKey of LEGACY_KEYS.REMINDERS) {
-        const val = localStorage.getItem(oldKey);
+        const val = safeGetItem(oldKey);
         if (val) {
-          localStorage.setItem(STORAGE_KEYS.REMINDERS, val);
+          safeSetItem(STORAGE_KEYS.REMINDERS, val);
           break;
         }
       }
     }
 
     // Migrate Expenses
-    if (!localStorage.getItem(STORAGE_KEYS.EXPENSES)) {
+    if (!safeGetItem(STORAGE_KEYS.EXPENSES)) {
       for (const oldKey of LEGACY_KEYS.EXPENSES) {
-        const val = localStorage.getItem(oldKey);
+        const val = safeGetItem(oldKey);
         if (val) {
-          localStorage.setItem(STORAGE_KEYS.EXPENSES, val);
+          safeSetItem(STORAGE_KEYS.EXPENSES, val);
           break;
         }
       }
     }
 
     // Migrate Debts
-    if (!localStorage.getItem(STORAGE_KEYS.DEBTS)) {
+    if (!safeGetItem(STORAGE_KEYS.DEBTS)) {
       for (const oldKey of LEGACY_KEYS.DEBTS) {
-        const val = localStorage.getItem(oldKey);
+        const val = safeGetItem(oldKey);
         if (val) {
-          localStorage.setItem(STORAGE_KEYS.DEBTS, val);
+          safeSetItem(STORAGE_KEYS.DEBTS, val);
           break;
         }
       }
     }
 
     // Migrate Bookmarks
-    if (!localStorage.getItem(STORAGE_KEYS.QURAN_BOOKMARKS)) {
+    if (!safeGetItem(STORAGE_KEYS.QURAN_BOOKMARKS)) {
       for (const oldKey of LEGACY_KEYS.QURAN_BOOKMARKS) {
-        const val = localStorage.getItem(oldKey);
+        const val = safeGetItem(oldKey);
         if (val) {
-          localStorage.setItem(STORAGE_KEYS.QURAN_BOOKMARKS, val);
+          safeSetItem(STORAGE_KEYS.QURAN_BOOKMARKS, val);
           break;
         }
       }
     }
 
-    if (!localStorage.getItem(STORAGE_KEYS.SHIA_BOOKMARKS)) {
+    if (!safeGetItem(STORAGE_KEYS.SHIA_BOOKMARKS)) {
       for (const oldKey of LEGACY_KEYS.SHIA_BOOKMARKS) {
-        const val = localStorage.getItem(oldKey);
+        const val = safeGetItem(oldKey);
         if (val) {
-          localStorage.setItem(STORAGE_KEYS.SHIA_BOOKMARKS, val);
+          safeSetItem(STORAGE_KEYS.SHIA_BOOKMARKS, val);
           break;
         }
       }
     }
 
-    localStorage.setItem(STORAGE_KEYS.MIGRATION_VERSION, 'true');
+    safeSetItem(STORAGE_KEYS.MIGRATION_VERSION, 'true');
   } catch (err) {
     console.warn('Storage migration warning:', err);
   }
@@ -160,10 +205,35 @@ runStorageMigrationIfNeeded();
 export function getStoredSettings(): CalendarSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    const raw = safeGetItem(STORAGE_KEYS.SETTINGS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_SETTINGS, ...parsed };
+      if (parsed && typeof parsed === 'object') {
+        const hijriAdjustment = Number.isFinite(parsed.hijriAdjustment)
+          ? Math.max(-2, Math.min(2, Math.trunc(parsed.hijriAdjustment)))
+          : DEFAULT_SETTINGS.hijriAdjustment;
+
+        const theme = parsed.theme === 'dark' ? 'dark' : 'light';
+        const colorTheme = typeof parsed.colorTheme === 'string' && parsed.colorTheme.trim()
+          ? parsed.colorTheme.trim()
+          : DEFAULT_SETTINGS.colorTheme;
+        const fontFamily = typeof parsed.fontFamily === 'string' && parsed.fontFamily.trim()
+          ? parsed.fontFamily.trim()
+          : DEFAULT_SETTINGS.fontFamily;
+        const selectedCityId = typeof parsed.selectedCityId === 'string' && parsed.selectedCityId.trim()
+          ? parsed.selectedCityId.trim()
+          : DEFAULT_SETTINGS.selectedCityId;
+
+        return {
+          ...DEFAULT_SETTINGS,
+          ...parsed,
+          theme,
+          colorTheme,
+          fontFamily,
+          selectedCityId,
+          hijriAdjustment
+        };
+      }
     }
   } catch (e) {
     console.error('Failed to load settings from storage', e);
@@ -174,7 +244,7 @@ export function getStoredSettings(): CalendarSettings {
 export function saveStoredSettings(settings: CalendarSettings): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    safeSetItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
   } catch (e) {
     console.error('Failed to save settings to storage', e);
   }
@@ -197,23 +267,26 @@ function normalizeCanonicalDateKey(val?: unknown): string {
 export function getStoredNotes(): UserNote[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.NOTES);
+    const raw = safeGetItem(STORAGE_KEYS.NOTES);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
+        const seenIds = new Set<string>();
         return parsed
           .filter(n => n && typeof n === 'object')
           .map((n, idx) => {
             const body = typeof n.content === 'string' ? n.content : (typeof n.text === 'string' ? n.text : '');
+            const safeCreated = Number.isFinite(n.createdAt) && n.createdAt > 0 ? n.createdAt : Date.now();
+            const safeUpdated = Number.isFinite(n.updatedAt) && n.updatedAt > 0 ? n.updatedAt : safeCreated;
             return {
-              id: n.id || `note_${Date.now()}_${idx}`,
+              id: sanitizeId(n.id, 'note', idx, seenIds),
               dateKey: normalizeCanonicalDateKey(n.dateKey),
-              title: typeof n.title === 'string' ? n.title : '',
-              content: body,
+              title: typeof n.title === 'string' ? n.title.slice(0, 500) : '',
+              content: body.slice(0, 50000),
               color: typeof n.color === 'string' ? n.color : undefined,
               category: typeof n.category === 'string' ? n.category : undefined,
-              createdAt: typeof n.createdAt === 'number' ? n.createdAt : Date.now(),
-              updatedAt: typeof n.updatedAt === 'number' ? n.updatedAt : Date.now()
+              createdAt: safeCreated,
+              updatedAt: safeUpdated
             };
           })
           .filter(n => n.content.trim().length > 0 || n.title.trim().length > 0);
@@ -228,7 +301,7 @@ export function getStoredNotes(): UserNote[] {
 export function saveStoredNotes(notes: UserNote[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.NOTES, JSON.stringify(notes));
+    safeSetItem(STORAGE_KEYS.NOTES, JSON.stringify(notes));
   } catch (e) {
     console.error('Failed to save notes to storage', e);
   }
@@ -238,19 +311,20 @@ export function saveStoredNotes(notes: UserNote[]): void {
 export function getStoredTasks(): UserTask[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.TASKS);
+    const raw = safeGetItem(STORAGE_KEYS.TASKS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
+        const seenIds = new Set<string>();
         return parsed
           .filter(t => t && typeof t === 'object')
           .map((t, idx) => ({
-            id: t.id || `task_${Date.now()}_${idx}`,
+            id: sanitizeId(t.id, 'task', idx, seenIds),
             dateKey: normalizeCanonicalDateKey(t.dateKey),
-            text: typeof t.text === 'string' ? t.text : '',
+            text: typeof t.text === 'string' ? t.text.slice(0, 1000) : '',
             completed: Boolean(t.completed),
             priority: t.priority === 'high' || t.priority === 'low' ? t.priority : 'medium',
-            createdAt: typeof t.createdAt === 'number' ? t.createdAt : Date.now()
+            createdAt: Number.isFinite(t.createdAt) && t.createdAt > 0 ? t.createdAt : Date.now()
           }))
           .filter(t => t.text.trim().length > 0);
       }
@@ -264,7 +338,7 @@ export function getStoredTasks(): UserTask[] {
 export function saveStoredTasks(tasks: UserTask[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
+    safeSetItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
   } catch (e) {
     console.error('Failed to save tasks to storage', e);
   }
@@ -274,28 +348,30 @@ export function saveStoredTasks(tasks: UserTask[]): void {
 export function getStoredReminders(): UserReminder[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.REMINDERS);
+    const raw = safeGetItem(STORAGE_KEYS.REMINDERS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
+        const seenIds = new Set<string>();
         return parsed
           .filter(r => r && typeof r === 'object')
           .map((r, idx) => {
             const isYearly = r.repeatYearly === true || r.repeat === 'yearly';
+            const safeCreated = Number.isFinite(r.createdAt) && r.createdAt > 0 ? r.createdAt : Date.now();
             return {
-              id: r.id || `rem_${Date.now()}_${idx}`,
+              id: sanitizeId(r.id, 'rem', idx, seenIds),
               dateKey: normalizeCanonicalDateKey(r.dateKey),
               time: typeof r.time === 'string' ? r.time : undefined,
-              title: typeof r.title === 'string' ? r.title : '',
+              title: typeof r.title === 'string' ? r.title.slice(0, 500) : '',
               type: (r.type === 'birthday' || r.type === 'bill' || r.type === 'event') ? r.type : 'reminder',
               category: (r.category || r.type || 'reminder') as any,
               repeatYearly: isYearly ? true : (typeof r.repeatYearly === 'boolean' ? r.repeatYearly : undefined),
               repeat: isYearly ? 'yearly' : ((r.repeat === 'monthly' || r.repeat === 'weekly') ? r.repeat : 'none'),
               enabled: typeof r.enabled === 'boolean' ? r.enabled : (typeof r.isEnabled === 'boolean' ? r.isEnabled : true),
               isEnabled: typeof r.isEnabled === 'boolean' ? r.isEnabled : (typeof r.enabled === 'boolean' ? r.enabled : true),
-              notificationId: typeof r.notificationId === 'number' ? r.notificationId : undefined,
-              notes: typeof r.notes === 'string' ? r.notes : undefined,
-              createdAt: typeof r.createdAt === 'number' ? r.createdAt : Date.now()
+              notificationId: typeof r.notificationId === 'number' && Number.isFinite(r.notificationId) ? r.notificationId : undefined,
+              notes: typeof r.notes === 'string' ? r.notes.slice(0, 5000) : undefined,
+              createdAt: safeCreated
             };
           })
           .filter(r => r.title.trim().length > 0 && r.dateKey.trim().length > 0 && Boolean(normalizeDateKey(r.dateKey)));
@@ -310,7 +386,7 @@ export function getStoredReminders(): UserReminder[] {
 export function saveStoredReminders(reminders: UserReminder[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.REMINDERS, JSON.stringify(reminders));
+    safeSetItem(STORAGE_KEYS.REMINDERS, JSON.stringify(reminders));
   } catch (e) {
     console.error('Failed to save reminders to storage', e);
   }
@@ -320,22 +396,26 @@ export function saveStoredReminders(reminders: UserReminder[]): void {
 export function getStoredExpenses(): ExpenseItem[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+    const raw = safeGetItem(STORAGE_KEYS.EXPENSES);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
+        const seenIds = new Set<string>();
         return parsed
           .filter(e => e && typeof e === 'object')
           .map((e, idx) => {
-            const numAmount = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount || 0).replace(/,/g, ''));
+            const rawAmount = typeof e.amount === 'number' ? e.amount : parseFloat(String(e.amount || 0).replace(/,/g, ''));
+            const safeAmount = Number.isFinite(rawAmount) && rawAmount >= 0 && rawAmount <= 1e12
+              ? Math.round(rawAmount * 100) / 100
+              : 0;
             const itemType: 'income' | 'expense' = e.type === 'income' ? 'income' : 'expense';
             return {
-              id: e.id || `exp_${Date.now()}_${idx}`,
+              id: sanitizeId(e.id, 'exp', idx, seenIds),
               dateKey: normalizeCanonicalDateKey(e.dateKey),
-              amount: isNaN(numAmount) ? 0 : Math.max(0, numAmount),
+              amount: safeAmount,
               type: itemType,
-              category: typeof e.category === 'string' && e.category.trim() ? e.category.trim() : 'سایر',
-              description: typeof e.description === 'string' ? e.description : ''
+              category: typeof e.category === 'string' && e.category.trim() ? e.category.trim().slice(0, 100) : 'سایر',
+              description: typeof e.description === 'string' ? e.description.slice(0, 2000) : ''
             };
           })
           .filter(e => e.amount > 0 || e.description.trim().length > 0);
@@ -350,7 +430,7 @@ export function getStoredExpenses(): ExpenseItem[] {
 export function saveStoredExpenses(expenses: ExpenseItem[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
+    safeSetItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
   } catch (e) {
     console.error('Failed to save expenses to storage', e);
   }
@@ -360,52 +440,61 @@ export function saveStoredExpenses(expenses: ExpenseItem[]): void {
 export function getStoredDebts(): DebtItem[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.DEBTS);
+    const raw = safeGetItem(STORAGE_KEYS.DEBTS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
+        const seenIds = new Set<string>();
         return parsed
           .filter(d => d && typeof d === 'object')
           .map((d, idx) => {
-            const numAmount = typeof d.amount === 'number' ? d.amount : parseFloat(String(d.amount || 0).replace(/,/g, ''));
-            const safeAmount = isNaN(numAmount) ? 0 : Math.max(0, numAmount);
+            const rawAmount = typeof d.amount === 'number' ? d.amount : parseFloat(String(d.amount || 0).replace(/,/g, ''));
+            const safeAmount = Number.isFinite(rawAmount) && rawAmount >= 0 && rawAmount <= 1e12
+              ? Math.round(rawAmount * 100) / 100
+              : 0;
 
             const rawPayments = Array.isArray(d.payments) ? d.payments : [];
+            const seenPaymentIds = new Set<string>();
             const safePayments: DebtPayment[] = rawPayments
               .filter((p: unknown): p is Record<string, unknown> => p !== null && typeof p === 'object')
               .map((p, pIdx: number) => {
                 const pNum = typeof p.amount === 'number' ? p.amount : parseFloat(String(p.amount || 0).replace(/,/g, ''));
+                const safePAmount = Number.isFinite(pNum) && pNum >= 0 && pNum <= 1e12
+                  ? Math.round(pNum * 100) / 100
+                  : 0;
                 return {
-                  id: (typeof p.id === 'string' && p.id) ? p.id : `pay_${Date.now()}_${pIdx}`,
-                  amount: isNaN(pNum) ? 0 : Math.max(0, pNum),
+                  id: sanitizeId(p.id, 'pay', pIdx, seenPaymentIds),
+                  amount: safePAmount,
                   dateKey: normalizeCanonicalDateKey(p.dateKey),
-                  note: typeof p.note === 'string' ? p.note : undefined,
-                  createdAt: typeof p.createdAt === 'number' ? p.createdAt : Date.now()
+                  note: typeof p.note === 'string' ? p.note.slice(0, 1000) : undefined,
+                  createdAt: Number.isFinite(p.createdAt) && p.createdAt > 0 ? p.createdAt : Date.now()
                 };
               });
 
             const paymentsSum = safePayments.reduce((acc, p) => acc + p.amount, 0);
             const numSettled = typeof d.settledAmount === 'number' ? d.settledAmount : paymentsSum;
-            const safeSettled = isNaN(numSettled) ? paymentsSum : Math.max(0, numSettled);
+            const safeSettled = Number.isFinite(numSettled) && numSettled >= 0 && numSettled <= 1e12
+              ? Math.round(numSettled * 100) / 100
+              : paymentsSum;
             const isSettled = typeof d.isSettled === 'boolean' ? d.isSettled : (safeSettled >= safeAmount && safeAmount > 0);
             const debtType: 'debt' | 'credit' = d.type === 'debt' ? 'debt' : 'credit';
 
             return {
-              id: d.id || `debt_${Date.now()}_${idx}`,
+              id: sanitizeId(d.id, 'debt', idx, seenIds),
               type: debtType,
-              personName: typeof d.personName === 'string' ? d.personName.trim() : 'بدون نام',
-              phone: typeof d.phone === 'string' ? d.phone : undefined,
+              personName: typeof d.personName === 'string' && d.personName.trim() ? d.personName.trim().slice(0, 200) : 'بدون نام',
+              phone: typeof d.phone === 'string' ? d.phone.slice(0, 50) : undefined,
               amount: safeAmount,
               settledAmount: safeSettled,
               isSettled,
-              category: typeof d.category === 'string' ? d.category : 'سایر موارد',
+              category: typeof d.category === 'string' ? d.category.slice(0, 100) : 'سایر موارد',
               startDate: normalizeCanonicalDateKey(d.startDate),
               dueDate: typeof d.dueDate === 'string' && d.dueDate.trim().length > 0 
                 ? normalizeCanonicalDateKey(d.dueDate) 
                 : undefined,
-              description: typeof d.description === 'string' ? d.description : undefined,
+              description: typeof d.description === 'string' ? d.description.slice(0, 2000) : undefined,
               payments: safePayments,
-              createdAt: typeof d.createdAt === 'number' ? d.createdAt : Date.now()
+              createdAt: Number.isFinite(d.createdAt) && d.createdAt > 0 ? d.createdAt : Date.now()
             };
           })
           .filter(d => d.personName.length > 0 && d.amount > 0);
@@ -420,7 +509,7 @@ export function getStoredDebts(): DebtItem[] {
 export function saveStoredDebts(debts: DebtItem[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.DEBTS, JSON.stringify(debts));
+    safeSetItem(STORAGE_KEYS.DEBTS, JSON.stringify(debts));
   } catch (e) {
     console.error('Failed to save debts to storage', e);
   }
@@ -430,7 +519,7 @@ export function saveStoredDebts(debts: DebtItem[]): void {
 export function getStoredQuranBookmarks(): number[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.QURAN_BOOKMARKS);
+    const raw = safeGetItem(STORAGE_KEYS.QURAN_BOOKMARKS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
@@ -444,7 +533,7 @@ export function getStoredQuranBookmarks(): number[] {
 export function saveStoredQuranBookmarks(bookmarks: number[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.QURAN_BOOKMARKS, JSON.stringify(bookmarks));
+    safeSetItem(STORAGE_KEYS.QURAN_BOOKMARKS, JSON.stringify(bookmarks));
   } catch (e) {
     console.error('Failed to save Quran bookmarks', e);
   }
@@ -454,7 +543,7 @@ export function saveStoredQuranBookmarks(bookmarks: number[]): void {
 export function getStoredShiaBookmarks(): string[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.SHIA_BOOKMARKS);
+    const raw = safeGetItem(STORAGE_KEYS.SHIA_BOOKMARKS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed;
@@ -468,7 +557,7 @@ export function getStoredShiaBookmarks(): string[] {
 export function saveStoredShiaBookmarks(bookmarks: string[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.SHIA_BOOKMARKS, JSON.stringify(bookmarks));
+    safeSetItem(STORAGE_KEYS.SHIA_BOOKMARKS, JSON.stringify(bookmarks));
   } catch (e) {
     console.error('Failed to save Shia bookmarks', e);
   }
@@ -477,13 +566,13 @@ export function saveStoredShiaBookmarks(bookmarks: string[]): void {
 // --- Welcome Modal Status ---
 export function getHasSeenWelcome(): boolean {
   if (typeof window === 'undefined') return true;
-  return localStorage.getItem(STORAGE_KEYS.HAS_SEEN_WELCOME) === 'true';
+  return safeGetItem(STORAGE_KEYS.HAS_SEEN_WELCOME) === 'true';
 }
 
 export function setHasSeenWelcome(seen: boolean = true): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEYS.HAS_SEEN_WELCOME, seen ? 'true' : 'false');
+    safeSetItem(STORAGE_KEYS.HAS_SEEN_WELCOME, seen ? 'true' : 'false');
   } catch {}
 }
 
@@ -581,77 +670,102 @@ export function validateAndRestoreBackup(jsonString: string): RestoreResult {
     let quranBookmarks: number[] = getStoredQuranBookmarks();
     let shiaBookmarks: string[] = getStoredShiaBookmarks();
 
-    // Format v3.1: contains parsed.data object
-    if (parsed.data && typeof parsed.data === 'object') {
-      const d = parsed.data;
-      if (d.settings) settings = { ...DEFAULT_SETTINGS, ...d.settings };
-      if (Array.isArray(d.notes)) notes = d.notes;
-      if (Array.isArray(d.tasks)) tasks = d.tasks;
-      if (Array.isArray(d.reminders)) reminders = d.reminders;
-      if (Array.isArray(d.expenses)) expenses = d.expenses;
-      if (Array.isArray(d.debts)) debts = d.debts;
-      if (Array.isArray(d.quranBookmarks)) quranBookmarks = d.quranBookmarks;
-      if (Array.isArray(d.shiaBookmarks)) shiaBookmarks = d.shiaBookmarks;
-    } else {
-      // Legacy Format Support (e.g. flat keys or old naming)
-      if (parsed.settings) settings = { ...DEFAULT_SETTINGS, ...parsed.settings };
-      if (Array.isArray(parsed.userNotes || parsed.notes)) notes = parsed.userNotes || parsed.notes;
-      if (Array.isArray(parsed.userTasks || parsed.tasks)) tasks = parsed.userTasks || parsed.tasks;
-      if (Array.isArray(parsed.userReminders || parsed.reminders)) reminders = parsed.userReminders || parsed.reminders;
-      if (Array.isArray(parsed.userFinances || parsed.expenses)) expenses = parsed.userFinances || parsed.expenses;
-      if (Array.isArray(parsed.debts || parsed.userDebts)) debts = parsed.debts || parsed.userDebts;
-      if (Array.isArray(parsed.quranBookmarks)) quranBookmarks = parsed.quranBookmarks;
-      if (Array.isArray(parsed.shiaBookmarks)) shiaBookmarks = parsed.shiaBookmarks;
-    }
-
-    // Persist restored data
-    saveStoredSettings(settings);
-    saveStoredNotes(notes);
-    saveStoredTasks(tasks);
-    saveStoredReminders(reminders);
-    saveStoredExpenses(expenses);
-    saveStoredDebts(debts);
-    saveStoredQuranBookmarks(quranBookmarks);
-    saveStoredShiaBookmarks(shiaBookmarks);
-
-    // Retrieve cleanly normalized and sanitized versions
-    const cleanSettings = getStoredSettings();
-    const cleanNotes = getStoredNotes();
-    const cleanTasks = getStoredTasks();
-    const cleanReminders = getStoredReminders();
-    const cleanExpenses = getStoredExpenses();
-    const cleanDebts = getStoredDebts();
-    const cleanQuranBookmarks = getStoredQuranBookmarks();
-    const cleanShiaBookmarks = getStoredShiaBookmarks();
-
-    // Re-save cleanly sanitized versions to ensure stored JSON is normalized
-    saveStoredNotes(cleanNotes);
-    saveStoredTasks(cleanTasks);
-    saveStoredReminders(cleanReminders);
-    saveStoredExpenses(cleanExpenses);
-    saveStoredDebts(cleanDebts);
-
-    return {
-      success: true,
-      message: 'بازیابی اطلاعات با موفقیت انجام شد.',
-      itemCounts: {
-        notes: cleanNotes.length,
-        tasks: cleanTasks.length,
-        reminders: cleanReminders.length,
-        expenses: cleanExpenses.length,
-        debts: cleanDebts.length
-      },
-      restoredData: {
-        settings: cleanSettings,
-        notes: cleanNotes,
-        tasks: cleanTasks,
-        reminders: cleanReminders,
-        expenses: cleanExpenses,
-        debts: cleanDebts,
-        quranBookmarks: cleanQuranBookmarks,
-        shiaBookmarks: cleanShiaBookmarks
-      }
+    // Snapshot current state for rollback if writing fails
+    const rollbackSnapshot = {
+      settings,
+      notes,
+      tasks,
+      reminders,
+      expenses,
+      debts,
+      quranBookmarks,
+      shiaBookmarks
     };
+
+    try {
+      // Format v3.1: contains parsed.data object
+      if (parsed.data && typeof parsed.data === 'object') {
+        const d = parsed.data;
+        if (d.settings) settings = { ...DEFAULT_SETTINGS, ...d.settings };
+        if (Array.isArray(d.notes)) notes = d.notes;
+        if (Array.isArray(d.tasks)) tasks = d.tasks;
+        if (Array.isArray(d.reminders)) reminders = d.reminders;
+        if (Array.isArray(d.expenses)) expenses = d.expenses;
+        if (Array.isArray(d.debts)) debts = d.debts;
+        if (Array.isArray(d.quranBookmarks)) quranBookmarks = d.quranBookmarks;
+        if (Array.isArray(d.shiaBookmarks)) shiaBookmarks = d.shiaBookmarks;
+      } else {
+        // Legacy Format Support (e.g. flat keys or old naming)
+        if (parsed.settings) settings = { ...DEFAULT_SETTINGS, ...parsed.settings };
+        if (Array.isArray(parsed.userNotes || parsed.notes)) notes = parsed.userNotes || parsed.notes;
+        if (Array.isArray(parsed.userTasks || parsed.tasks)) tasks = parsed.userTasks || parsed.tasks;
+        if (Array.isArray(parsed.userReminders || parsed.reminders)) reminders = parsed.userReminders || parsed.reminders;
+        if (Array.isArray(parsed.userFinances || parsed.expenses)) expenses = parsed.userFinances || parsed.expenses;
+        if (Array.isArray(parsed.debts || parsed.userDebts)) debts = parsed.debts || parsed.userDebts;
+        if (Array.isArray(parsed.quranBookmarks)) quranBookmarks = parsed.quranBookmarks;
+        if (Array.isArray(parsed.shiaBookmarks)) shiaBookmarks = parsed.shiaBookmarks;
+      }
+
+      // Persist restored data
+      saveStoredSettings(settings);
+      saveStoredNotes(notes);
+      saveStoredTasks(tasks);
+      saveStoredReminders(reminders);
+      saveStoredExpenses(expenses);
+      saveStoredDebts(debts);
+      saveStoredQuranBookmarks(quranBookmarks);
+      saveStoredShiaBookmarks(shiaBookmarks);
+
+      // Retrieve cleanly normalized and sanitized versions
+      const cleanSettings = getStoredSettings();
+      const cleanNotes = getStoredNotes();
+      const cleanTasks = getStoredTasks();
+      const cleanReminders = getStoredReminders();
+      const cleanExpenses = getStoredExpenses();
+      const cleanDebts = getStoredDebts();
+      const cleanQuranBookmarks = getStoredQuranBookmarks();
+      const cleanShiaBookmarks = getStoredShiaBookmarks();
+
+      // Re-save cleanly sanitized versions to ensure stored JSON is normalized
+      saveStoredNotes(cleanNotes);
+      saveStoredTasks(cleanTasks);
+      saveStoredReminders(cleanReminders);
+      saveStoredExpenses(cleanExpenses);
+      saveStoredDebts(cleanDebts);
+
+      return {
+        success: true,
+        message: 'بازیابی اطلاعات با موفقیت انجام شد.',
+        itemCounts: {
+          notes: cleanNotes.length,
+          tasks: cleanTasks.length,
+          reminders: cleanReminders.length,
+          expenses: cleanExpenses.length,
+          debts: cleanDebts.length
+        },
+        restoredData: {
+          settings: cleanSettings,
+          notes: cleanNotes,
+          tasks: cleanTasks,
+          reminders: cleanReminders,
+          expenses: cleanExpenses,
+          debts: cleanDebts,
+          quranBookmarks: cleanQuranBookmarks,
+          shiaBookmarks: cleanShiaBookmarks
+        }
+      };
+    } catch (innerErr) {
+      // Rollback to prior snapshot
+      saveStoredSettings(rollbackSnapshot.settings);
+      saveStoredNotes(rollbackSnapshot.notes);
+      saveStoredTasks(rollbackSnapshot.tasks);
+      saveStoredReminders(rollbackSnapshot.reminders);
+      saveStoredExpenses(rollbackSnapshot.expenses);
+      saveStoredDebts(rollbackSnapshot.debts);
+      saveStoredQuranBookmarks(rollbackSnapshot.quranBookmarks);
+      saveStoredShiaBookmarks(rollbackSnapshot.shiaBookmarks);
+      throw innerErr;
+    }
   } catch (err: any) {
     return {
       success: false,
@@ -667,11 +781,11 @@ export function resetAllStorageData(): void {
   if (typeof window === 'undefined') return;
   try {
     Object.values(STORAGE_KEYS).forEach(k => {
-      localStorage.removeItem(k);
+      safeRemoveItem(k);
     });
     // Also clean any legacy keys
     Object.values(LEGACY_KEYS).forEach(list => {
-      list.forEach(k => localStorage.removeItem(k));
+      list.forEach(k => safeRemoveItem(k));
     });
   } catch (e) {
     console.error('Failed to reset storage data', e);

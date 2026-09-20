@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { JalaliDate, GregorianDate, FullDateInfo } from '../types/calendar';
 import { getTodayJalali, getTodayGregorian } from '../utils/jalali';
 import { getFullDateInfo } from '../utils/dateInfo';
@@ -81,14 +81,18 @@ export function useTodayDate(hijriAdjustment: number = 0): UseTodayDateResult {
     };
   }, [checkAndUpdateDate]);
 
-  const todayInfo = getFullDateInfo(
-    currentJalali.jy,
-    currentJalali.jm,
-    currentJalali.jd,
-    hijriAdjustment
-  );
+  const todayInfo = useMemo(() => {
+    return getFullDateInfo(
+      currentJalali.jy,
+      currentJalali.jm,
+      currentJalali.jd,
+      hijriAdjustment
+    );
+  }, [currentJalali.jy, currentJalali.jm, currentJalali.jd, hijriAdjustment]);
 
-  const todayDateKey = makeDateKey(currentJalali.jy, currentJalali.jm, currentJalali.jd);
+  const todayDateKey = useMemo(() => {
+    return makeDateKey(currentJalali.jy, currentJalali.jm, currentJalali.jd);
+  }, [currentJalali.jy, currentJalali.jm, currentJalali.jd]);
 
   return {
     todayJalali: currentJalali,

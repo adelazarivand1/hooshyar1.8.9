@@ -9,7 +9,7 @@ const config: CapacitorConfig = {
   },
   plugins: {
     LocalNotifications: {
-      smallIcon: 'ic_launcher',
+      smallIcon: 'ic_stat_notification',
       iconColor: '#123C35',
     },
   },

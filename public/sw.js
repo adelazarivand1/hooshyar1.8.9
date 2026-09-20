@@ -1,5 +1,5 @@
 // Hooshyar Web Service Worker - Offline PWA Cache Strategy
-const CACHE_NAME = 'hooshyar-static-v1.8.6';
+const CACHE_NAME = 'hooshyar-static-v1.8.9';
 
 const PRECACHE_ASSETS = [
   '/',
@@ -77,6 +77,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Bypass API and dynamic backend requests from SW caching
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/data/')) {
+    return;
+  }
+
   // Navigation requests (HTML pages): Network-first with offline cache fallback
   if (request.mode === 'navigate' || (request.headers.get('accept') && request.headers.get('accept').includes('text/html'))) {
     event.respondWith(
@@ -144,4 +149,10 @@ self.addEventListener('notificationclick', (event) => {
       }
     })
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });

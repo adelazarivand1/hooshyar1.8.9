@@ -143,7 +143,7 @@ public class AzanAlarmReceiver extends BroadcastReceiver {
             );
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(context, channelId)
-                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setSmallIcon(R.drawable.ic_stat_notification)
                     .setContentTitle("🕌 هنگام " + prayerName + " به افق " + cityName)
                     .setContentText("هنگام اذان و وقت نماز است")
                     .setSubText("اذان‌گوی هوشیار")
