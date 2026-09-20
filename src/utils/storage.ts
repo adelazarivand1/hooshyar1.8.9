@@ -53,9 +53,13 @@ const LEGACY_KEYS = {
 
 // In-memory fallback for private browsing, quota exceeded, or disabled storage environments
 const inMemoryStore = new Map<string, string>();
+const storageWriteFailedKeys = new Set<string>();
 
 export function safeGetItem(key: string): string | null {
   if (typeof window === 'undefined') return null;
+  if (storageWriteFailedKeys.has(key)) {
+    return inMemoryStore.get(key) ?? null;
+  }
   try {
     const val = localStorage.getItem(key);
     if (val !== null) return val;
@@ -70,8 +74,10 @@ export function safeSetItem(key: string, value: string): boolean {
   inMemoryStore.set(key, value);
   try {
     localStorage.setItem(key, value);
+    storageWriteFailedKeys.delete(key);
     return true;
   } catch (err) {
+    storageWriteFailedKeys.add(key);
     console.warn(`[Storage] Failed to write to localStorage for key ${key}:`, err);
     return false;
   }
@@ -80,6 +86,7 @@ export function safeSetItem(key: string, value: string): boolean {
 export function safeRemoveItem(key: string): void {
   if (typeof window === 'undefined') return;
   inMemoryStore.delete(key);
+  storageWriteFailedKeys.delete(key);
   try {
     localStorage.removeItem(key);
   } catch {

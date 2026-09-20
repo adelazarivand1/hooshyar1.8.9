@@ -18,7 +18,10 @@ import {
   validateAndRestoreBackup,
   runStorageMigrationIfNeeded,
   STORAGE_KEYS,
-  DEFAULT_SETTINGS
+  DEFAULT_SETTINGS,
+  safeGetItem,
+  safeSetItem,
+  safeRemoveItem
 } from '../utils/storage';
 
 // In-memory localStorage mock
@@ -387,5 +390,26 @@ describe('Storage & Migration Engine', () => {
     expect(reminders.length).toBe(1);
     expect(reminders[0].id).toBe('r_slash');
     expect(reminders[0].dateKey).toBe('1404-01-01');
+  });
+
+  it('guarantees in-memory fallback and recovery when localStorage throws quota or security errors', () => {
+    // 1. Initial write works
+    safeSetItem('test_key_quota', 'initial_value');
+    expect(safeGetItem('test_key_quota')).toBe('initial_value');
+
+    // 2. Simulate localStorage.setItem throwing QuotaExceededError
+    vi.spyOn(mockStorage, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError: DOMException');
+    });
+
+    const success = safeSetItem('test_key_quota', 'updated_fallback_value');
+    expect(success).toBe(false); // Returns false gracefully without throwing
+
+    // safeGetItem returns the updated in-memory value rather than stale storage
+    expect(safeGetItem('test_key_quota')).toBe('updated_fallback_value');
+
+    // 3. Removal cleans both in-memory store and failed key set
+    safeRemoveItem('test_key_quota');
+    expect(safeGetItem('test_key_quota')).toBeNull();
   });
 });

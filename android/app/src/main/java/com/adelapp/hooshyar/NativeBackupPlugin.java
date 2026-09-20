@@ -17,6 +17,9 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -26,7 +29,46 @@ import java.nio.charset.StandardCharsets;
 public class NativeBackupPlugin extends Plugin {
 
     private static final String TAG = "NativeBackupPlugin";
+    private static final String TEMP_BACKUP_FILE_NAME = "pending_backup_export.tmp";
     private String pendingDataToSave = null;
+
+    private void writePendingBackupToDisk(String content) {
+        try {
+            File tempFile = new File(getContext().getCacheDir(), TEMP_BACKUP_FILE_NAME);
+            try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+                fos.write(content.getBytes(StandardCharsets.UTF_8));
+                fos.flush();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to write pending backup to cache file", e);
+        }
+    }
+
+    private String readPendingBackupFromDisk() {
+        try {
+            File tempFile = new File(getContext().getCacheDir(), TEMP_BACKUP_FILE_NAME);
+            if (!tempFile.exists()) return null;
+            byte[] bytes = new byte[(int) tempFile.length()];
+            try (FileInputStream fis = new FileInputStream(tempFile)) {
+                int read = fis.read(bytes);
+                if (read > 0) {
+                    return new String(bytes, 0, read, StandardCharsets.UTF_8);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to read pending backup from cache file", e);
+        }
+        return null;
+    }
+
+    private void clearPendingBackupDisk() {
+        try {
+            File tempFile = new File(getContext().getCacheDir(), TEMP_BACKUP_FILE_NAME);
+            if (tempFile.exists()) {
+                tempFile.delete();
+            }
+        } catch (Exception ignored) {}
+    }
 
     @PluginMethod
     public void saveBackupFile(PluginCall call) {
@@ -40,6 +82,7 @@ public class NativeBackupPlugin extends Plugin {
             }
 
             pendingDataToSave = content;
+            writePendingBackupToDisk(content);
 
             Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -71,6 +114,10 @@ public class NativeBackupPlugin extends Plugin {
             if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
                 Uri uri = result.getData().getData();
                 if (uri != null) {
+                    if (pendingDataToSave == null) {
+                        pendingDataToSave = readPendingBackupFromDisk();
+                    }
+
                     if (pendingDataToSave == null) {
                         call.reject("محتوای پشتیبان در حافظه موقت یافت نشد.");
                         return;
@@ -105,6 +152,7 @@ public class NativeBackupPlugin extends Plugin {
             call.reject("خطای سیستمی در فرآیند ذخیره‌سازی: " + ex.getMessage(), ex);
         } finally {
             pendingDataToSave = null;
+            clearPendingBackupDisk();
         }
     }
 
