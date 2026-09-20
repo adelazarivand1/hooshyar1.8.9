@@ -1,0 +1,132 @@
+name: Build Hooshyar Android APK
+
+on:
+push:
+branches:
+- main
+- master
+pull_request:
+branches:
+- main
+- master
+workflow_dispatch:
+
+jobs:
+build:
+name: Build Hooshyar Android APK
+runs-on: ubuntu-latest
+steps:
+- name: Checkout Repository
+uses: actions/checkout@v4
+
+```
+  - name: Setup Node.js 22
+    uses: actions/setup-node@v4
+    with:
+      node-version: 22
+
+  - name: Check Node.js
+    run: |
+      node --version
+      npm --version
+
+  - name: Install Dependencies
+    run: npm install
+
+  - name: Validate TypeScript
+    run: npx tsc --noEmit
+
+  - name: Run Web Unit Tests
+    run: npm test -- --run
+
+  - name: Build Web Application
+    run: npm run build
+
+  - name: Setup JDK 21
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: '21'
+
+  - name: Check Java Version
+    run: java -version
+
+  - name: Setup Android SDK
+    uses: android-actions/setup-android@v4
+    with:
+      packages: platform-tools
+
+  - name: Install Android SDK Packages
+    run: |
+      yes | sdkmanager --licenses || true
+      sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+  - name: Prepare Android Project
+    run: |
+      echo "Verifying existing Android project..."
+      chmod +x android/gradlew
+      echo "Android project prepared."
+
+  - name: Sync Capacitor
+    run: npx cap sync android
+
+  - name: Verify Android Project
+    run: |
+      echo "Checking Android project..."
+      test -f android/gradlew
+      test -f android/gradle/wrapper/gradle-wrapper.jar
+      test -f android/settings.gradle
+      echo "Android project is valid."
+      ls -la android/
+
+  - name: Run Android Unit Tests
+    working-directory: android
+    run: ./gradlew test --stacktrace
+
+  - name: Build Debug APK
+    working-directory: android
+    run: ./gradlew assembleDebug --stacktrace
+
+  - name: Build Release APK
+    working-directory: android
+    env:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+    run: |
+      if [ -n "$KEYSTORE_BASE64" ] && [ -n "$KEYSTORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ]; then
+        echo "Signing secrets detected."
+        echo "$KEYSTORE_BASE64" | base64 --decode > app/release-signing.jks
+        export KEYSTORE_FILE="release-signing.jks"
+        ./gradlew assembleRelease --stacktrace
+        rm -f app/release-signing.jks
+        echo "Signed Release APK build complete."
+      else
+        echo "Release signing secrets not configured."
+        echo "Building unsigned Release APK."
+        ./gradlew assembleRelease --stacktrace
+        echo "Unsigned Release APK build complete."
+      fi
+
+  - name: Find APK Files
+    run: |
+      echo "Generated APK files:"
+      find android/app/build/outputs -type f -name "*.apk" -print
+
+  - name: Upload Debug APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: Hooshyar-Debug-APK
+      path: android/app/build/outputs/apk/debug/*.apk
+      if-no-files-found: error
+      retention-days: 30
+
+  - name: Upload Release APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: Hooshyar-Release-APK
+      path: android/app/build/outputs/apk/release/*.apk
+      if-no-files-found: error
+      retention-days: 30
+```

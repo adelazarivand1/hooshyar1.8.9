@@ -1,0 +1,33 @@
+{
+  "name": "هوشیار | همراه روزانه و تقویم هوشمند",
+  "short_name": "هوشیار",
+  "description": "برنامه ریزی هوشمند، زندگی بهتر | تقویم، اوقات شرعی، قرآن، یادداشت‌ها و مدیریت شخصی",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B1C19",
+  "theme_color": "#123C35",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "64x64",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
